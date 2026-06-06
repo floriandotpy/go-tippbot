@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"log"
 	"os"
@@ -42,6 +43,13 @@ func main() {
 
 	// Initialize GoTipp API client
 	client := gotipp.NewClient(baseURL, apiToken)
+
+	// Load team stats
+	teamStats, err := loadTeamStats("data/teams.csv")
+	if err != nil {
+		log.Fatalf("failed to load team stats: %v", err)
+	}
+	log.Printf("Loaded stats for %d teams", len(teamStats))
 
 	// 1. Fetch matches
 	matches, err := client.GetMatches(ctx)
@@ -88,7 +96,7 @@ func main() {
 
 		log.Printf("Predicting batch %d–%d of %d...", i+1, end, len(pending))
 
-		predictions, err := predictBatch(ctx, g, batch)
+		predictions, err := predictBatch(ctx, g, batch, teamStats)
 		if err != nil {
 			log.Printf("failed to predict batch: %v", err)
 			continue
@@ -135,18 +143,22 @@ type Prediction struct {
 	TippB int `json:"tipp_b" jsonschema:"description=Predicted goals for team B,minimum=0,maximum=10"`
 }
 
-func predictBatch(ctx context.Context, g *genkit.Genkit, matches []gotipp.Match) ([]Prediction, error) {
+func predictBatch(ctx context.Context, g *genkit.Genkit, matches []gotipp.Match, stats map[string]TeamStats) ([]Prediction, error) {
 	// Build match list for the prompt
 	var matchList string
 	for i, m := range matches {
-		matchList += fmt.Sprintf("%d. %s vs %s (type: %s, phase: %d)\n", i+1, m.TeamA, m.TeamB, m.MatchType, m.EventPhase)
+		aStats := formatStats(m.TeamA, stats)
+		bStats := formatStats(m.TeamB, stats)
+		matchList += fmt.Sprintf("%d. %s %svs %s %s(type: %s, phase: %d)\n",
+			i+1, m.TeamA, aStats, m.TeamB, bStats, m.MatchType, m.EventPhase)
 	}
 
 	prompt := fmt.Sprintf(`You are a football prediction expert. Predict the most likely final score for each of these matches.
 
 Matches:
 %s
-Consider team strength, historical performance, and typical tournament scoring patterns.
+Use the FIFA rankings and points to gauge relative team strength.
+Consider historical performance and typical tournament scoring patterns.
 Most football matches end with 0-4 goals per team.
 Be decisive — pick the single most likely outcome for each match.
 Return predictions in the same order as the matches listed above.`, matchList)
@@ -159,6 +171,45 @@ Return predictions in the same order as the matches listed above.`, matchList)
 	}
 
 	return result.Predictions, nil
+}
+
+// TeamStats holds FIFA ranking data for a team.
+type TeamStats struct {
+	FIFARank string
+	Points   string
+}
+
+func loadTeamStats(path string) (map[string]TeamStats, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	stats := make(map[string]TeamStats)
+	for i, row := range records {
+		if i == 0 { // skip header
+			continue
+		}
+		if len(row) < 3 {
+			continue
+		}
+		stats[row[0]] = TeamStats{FIFARank: row[1], Points: row[2]}
+	}
+	return stats, nil
+}
+
+func formatStats(team string, stats map[string]TeamStats) string {
+	if s, ok := stats[team]; ok {
+		return fmt.Sprintf("[FIFA #%s, %s pts] ", s.FIFARank, s.Points)
+	}
+	return ""
 }
 
 func requireEnv(key string) string {
