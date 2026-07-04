@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,9 @@ import (
 )
 
 func main() {
+	allFlag := flag.Bool("all", false, "Re-predict and submit tipps for all matches that accept tipps, even if already tipped")
+	flag.Parse()
+
 	// Load .env file if present (no error if missing)
 	_ = godotenv.Load()
 
@@ -71,7 +75,7 @@ func main() {
 
 	var pending []gotipp.Match
 	for _, m := range matches {
-		if m.AcceptsTipps && !tippedMatchIDs[m.ID] {
+		if m.AcceptsTipps && (*allFlag || !tippedMatchIDs[m.ID]) {
 			pending = append(pending, m)
 		}
 	}
