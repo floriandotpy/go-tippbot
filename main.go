@@ -112,6 +112,9 @@ func main() {
 			}
 			match := batch[j]
 			log.Printf("  %s %d - %d %s", match.TeamA, p.TippA, p.TippB, match.TeamB)
+			if p.Reasoning != "" {
+				log.Printf("    → %s", p.Reasoning)
+			}
 			allTipps = append(allTipps, gotipp.TippRequest{
 				MatchID: match.ID,
 				TippA:   p.TippA,
@@ -143,8 +146,9 @@ type BatchPrediction struct {
 
 // Prediction is a single match score prediction.
 type Prediction struct {
-	TippA int `json:"tipp_a" jsonschema:"description=Predicted goals for team A,minimum=0,maximum=10"`
-	TippB int `json:"tipp_b" jsonschema:"description=Predicted goals for team B,minimum=0,maximum=10"`
+	TippA     int    `json:"tipp_a" jsonschema:"description=Predicted goals for team A,minimum=0,maximum=10"`
+	TippB     int    `json:"tipp_b" jsonschema:"description=Predicted goals for team B,minimum=0,maximum=10"`
+	Reasoning string `json:"reasoning" jsonschema:"description=One or two sentences explaining the predicted outcome"`
 }
 
 func predictBatch(ctx context.Context, g *genkit.Genkit, matches []gotipp.Match, stats map[string]TeamStats) ([]Prediction, error) {
@@ -165,6 +169,7 @@ Use the FIFA rankings and points to gauge relative team strength.
 Consider historical performance and typical tournament scoring patterns.
 Most football matches end with 0-4 goals per team.
 Be decisive — pick the single most likely outcome for each match.
+For each prediction, include a brief reasoning (1-2 sentences) explaining how you expect the match to play out.
 Return predictions in the same order as the matches listed above.`, matchList)
 
 	result, _, err := genkit.GenerateData[BatchPrediction](ctx, g,
